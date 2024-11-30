@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 1: Checkout the code
+    - name: Checkout Code
+      uses: actions/checkout@v2
+
+    # Step 2: Configure AWS credentials securely
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # Step 3: Login to Amazon ECR
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    # Step 4: Build, Tag, and Push Docker Image to ECR
+    - name: Build, Tag, and Push Docker Image
+      run: |
+        # Variables
+        ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY=gitops-argocd
+        GIT_HASH=$(git rev-parse --short "$GITHUB_SHA")
+
+        # Build Docker image
+        echo "Building Docker image..."
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:${GITHUB_REF##*/}-$GIT_HASH .
+
+        # Push Docker image to ECR
+        echo "Pushing Docker image to Amazon ECR..."
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:${GITHUB_REF##*/}-$GIT_HASH
+
+        # Output the image URL
+        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:${GITHUB_REF##*/}-$GIT_HASH"
+
+    # Step 5: Save build logs as an artifact
+    - name: Save Build Logs
+      run: echo "Build complete for $ECR_REPOSITORY:${GITHUB_REF##*/}-$GIT_HASH" > build-log.txt
+
+    # Step 6: Upload Build Logs as Artifact
+    - name: Upload Build Logs Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-logs
+        path: build-log.txt
